@@ -27,6 +27,15 @@ typedef struct metaInfo
 
 static metaInfo * fs_metaInfo = NULL;
 /******************************************************************************/
+
+/*
+  FILE ALLOCATION TABLE STRUCTURE
+
+  flat array. each file created requires 20 bytes of info to be recorded in The
+  array. first 8 bytes are filesize. next 4 bytes is the beginning block number.
+  next 4 bytes are the ending block number. the remaining 4 bytes is the the
+  filename offset in the directory.
+*/
 int make_disk(char *name)
 {
   int f, cnt;
