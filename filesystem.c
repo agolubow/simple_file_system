@@ -7,16 +7,11 @@
 
 int main(){
 
-  //make_disk("test_disk");
-  //open_disk("test_dis");
-  //char * file_system = malloc(36503552);
-
-  int i;
-
   make_fs("test_disk");
-  close_disk();
 
-  printf("opened array\n");
+  mount_fs("test_disk");
+
+  unmount_fs("test_disk");
 
   return 0;
 }

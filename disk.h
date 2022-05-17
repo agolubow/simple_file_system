@@ -14,6 +14,7 @@ int block_write(int block, char *buf);
                                /* write a block of size BLOCK_SIZE to disk    */
 int block_read(int block, char *buf);
                                /* read a block of size BLOCK_SIZE from disk   */
+int convertToInt(char *array);
 int make_fs(char *disk_name);
 int initialize_fs();
 int unmount_fs();

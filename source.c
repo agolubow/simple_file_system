@@ -9,7 +9,23 @@
 /******************************************************************************/
 static int active = 0;  /* is the virtual disk open (active) */
 static int handle;      /* file handle to virtual disk       */
-static char * file_system = NULL;
+static char * meta_info = NULL;
+typedef struct metaInfo
+{
+    char superBlockInfo[26];
+    int directoryOffset;
+    int FATOffset;
+    int dataBlockOffset;
+    int numOfFiles;
+    int directoryBlock;
+    int FATBlock;
+    int dataBlock;
+    char virtualFat[1280];
+    char virtualDirectory[1024];
+    int fileDescriptors[64];
+} metaInfo;
+
+static metaInfo * fs_metaInfo = NULL;
 /******************************************************************************/
 int make_disk(char *name)
 {
@@ -124,6 +140,28 @@ int block_read(int block, char *buf)
   return 0;
 }
 
+int convertToInt(char *array) {
+  int number = 0;
+  int mult = 1;
+  int n = sizeof(array);
+  /* for each character in array */
+  while (n--)
+  {
+      /* if not digit or '-', check if number > 0, break or continue */
+      if (array[n] < '0' || array[n] > '9') {
+          if (number){
+              break;
+          } else {
+              continue;
+          }
+      }                   /* convert digit to numeric value   */
+      number += (array[n] - '0') * mult;
+      mult *= 10;
+  }
+
+  return number;
+}
+
 int initialize_fs()
 {
     if( active != 1 ){
@@ -131,9 +169,17 @@ int initialize_fs()
       return -1;
     }
 
-    char init_buf[] = "4096819216777216\n";
-    if( write(handle, init_buf, 16) < 0 ) {
-      perror("block_write: failed to write");
+    /*
+        The first 7 bytes are a signature to show that the filesystem has been
+        initialized. second 4 bytes are the directory offset. it is 4096, meaning
+        it starts at block 2. third 4 bytes is the File Allocation Table offset.
+        it is 8192, meaning it starts at block 3. the next 8 bytes are the
+        data blocks offset. it starts at 16777216, which is the 4096th block.
+        the remaining two bytes are the number of files. max files = 64.
+    */
+    char init_buf[] = "CPSC351409681921677721600\n";
+    if( write(handle, init_buf, 25) < 0 ) {
+      perror("initialize_fs: failed to initialize");
       return -1;
     }
 
@@ -152,6 +198,7 @@ int make_fs(char *disk_name)
 
       //initialize filesystem here.
       initialize_fs();
+      close_disk();
 
     } else {
       perror("make_fs: failed to create file system. open file failure");
@@ -167,11 +214,100 @@ int make_fs(char *disk_name)
 
 int mount_fs(char *disk_name)
 {
+    open_disk(disk_name);
+    fs_metaInfo = malloc(sizeof(metaInfo));
 
+    if (read(handle, fs_metaInfo->superBlockInfo, 25) < 0) {
+      perror("mount_fs: failed to mount file system");
+      return -1;
+    }
+
+    char fs_init_signature[7];
+    int i;
+    int j;
+    for( i = 0; i < 7; i++ ){
+      fs_init_signature[i] = fs_metaInfo->superBlockInfo[i];
+    }
+
+    if(strncmp(fs_init_signature, "CPSC351", 7) != 0){
+  		perror("mount_fs: file system was not initialized.");
+  		return -1;
+  	} else {
+
+      char directoryOffset[5];
+      char FATOffset[5];
+      char dataBlockOffset[9];
+      char numOfFiles[3];
+
+      j = 0;
+      while( i < 11 ){
+        directoryOffset[j] = fs_metaInfo->superBlockInfo[i];
+        ++i;
+        ++j;
+      }
+      directoryOffset[j] = '\0';
+      j = 0;
+      while( i < 15 ){
+        FATOffset[j] = fs_metaInfo->superBlockInfo[i];
+        ++i;
+        ++j;
+      }
+      FATOffset[j] = '\0';
+      j = 0;
+      while( i < 23 ){
+        dataBlockOffset[j] = fs_metaInfo->superBlockInfo[i];
+        ++i;
+        ++j;
+      }
+      dataBlockOffset[j] = '\0';
+      j = 0;
+      while( i < 25 ){
+        numOfFiles[j] = fs_metaInfo->superBlockInfo[i];
+        ++i;
+        ++j;
+      }
+      numOfFiles[j] = '\0';
+
+      /* convert offsets to actual integers to be used for indexing array */
+      fs_metaInfo->directoryOffset = atoi(directoryOffset);
+      fs_metaInfo->FATOffset = atoi(FATOffset);
+      fs_metaInfo->dataBlockOffset = atoi(dataBlockOffset);
+      fs_metaInfo->numOfFiles = atoi(numOfFiles);
+
+      /* get block number to pass to block_write */
+      fs_metaInfo->directoryBlock = fs_metaInfo->directoryOffset / BLOCK_SIZE;
+      fs_metaInfo->FATBlock = fs_metaInfo->FATOffset / BLOCK_SIZE;
+      fs_metaInfo->dataBlock = fs_metaInfo->dataBlockOffset / BLOCK_SIZE;
+
+      /* initialize file descriptor array */
+      for(i = 0; i < 64; i++ ){
+        fs_metaInfo->fileDescriptors[i] = -1;
+      }
+
+      printf("\nInteger: %d", fs_metaInfo->directoryOffset);
+      printf("\nInteger: %d", fs_metaInfo->FATOffset);
+      printf("\nInteger: %d", fs_metaInfo->dataBlockOffset);
+      printf("\nInteger: %d", fs_metaInfo->numOfFiles);
+
+      printf("\nblock number: %d", fs_metaInfo->directoryBlock);
+      printf("\nblock number: %d", fs_metaInfo->FATBlock);
+      printf("\nblock number: %d\n", fs_metaInfo->dataBlock);
+
+    }
     return 0;
 }
 
-int unmount_fs(char *disk_name){
-  free(file_system);
+int unmount_fs(char *disk_name)
+{
+  if( lseek(handle, 0, SEEK_SET) < 0 ) {
+    perror("unmount_fs: failed to lseek. failed to save metadata");
+    return -1;
+  }
+  if( write(handle, fs_metaInfo->superBlockInfo, 25) < 0 ) {
+    perror("unmount_fs: failed to save metadata");
+    return -1;
+  }
+  close_disk();
+  free(fs_metaInfo);
   return 0;
 }
