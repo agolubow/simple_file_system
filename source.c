@@ -6,11 +6,28 @@
 
 #include "disk.h"
 
+// Your library must support a maximum of 32 file descriptors that can be open simultaneously
+#define MAX_FILE_DESC 32
+// The maximum length for a file name is 15 characters
+#define MAX_FILENAME_LEN 15
+// Your file system does not have to store more than 64 files 
+#define MAX_FILE_LIMIT 64
+
+typedef enum { false, true } bool;
+
 /******************************************************************************/
 static int active = 0;  /* is the virtual disk open (active) */
 static int handle;      /* file handle to virtual disk       */
 static char * meta_info = NULL;
-typedef struct metaInfo
+
+typedef struct
+{
+    bool is_used;                   
+    int fileIndex;                   
+    int offset;             
+} fileDescriptor;
+
+typedef struct 
 {
     char superBlockInfo[26];
     int directoryOffset;
@@ -22,8 +39,9 @@ typedef struct metaInfo
     int dataBlock;
     char virtualFat[1280];
     char virtualDirectory[1024];
-    int fileDescriptors[64];
+    fileDescriptor fileDescriptors[MAX_FILE_DESC];
 } metaInfo;
+
 
 static metaInfo * fs_metaInfo = NULL;
 /******************************************************************************/
@@ -289,8 +307,8 @@ int mount_fs(char *disk_name)
       fs_metaInfo->dataBlock = fs_metaInfo->dataBlockOffset / BLOCK_SIZE;
 
       /* initialize file descriptor array */
-      for(i = 0; i < 64; i++ ){
-        fs_metaInfo->fileDescriptors[i] = -1;
+      for(i = 0; i < MAX_FILE_LIMIT; i++ ){
+        fs_metaInfo->fileDescriptors[i].is_used = false;
       }
 
       printf("\nInteger: %d", fs_metaInfo->directoryOffset);
@@ -319,4 +337,12 @@ int unmount_fs(char *disk_name)
   close_disk();
   free(fs_metaInfo);
   return 0;
+}
+
+int fs_get_filesize(int fildes){
+    if(!fs_metaInfo->fileDescriptors[fildes].is_used){
+        fprintf(stderr, "error: Invalid file descriptor.\n");
+        return -1;
+    }
+    // Find file size somehow
 }
